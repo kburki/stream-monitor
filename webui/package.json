@@ -1,0 +1,12 @@
+{
+  "name": "stream-monitor-webui",
+  "version": "1.0.0",
+  "description": "Password-protected web UI for editing config.json and controlling the KTOO stream monitor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

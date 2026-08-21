@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stream Monitor Config</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem 1rem 4rem;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.9rem; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .panel h2 { font-size: 1rem; margin: 0 0 1rem; color: var(--accent); }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 0.25rem;
+    margin-top: 0.75rem;
+  }
+  label:first-child { margin-top: 0; }
+  input {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.9rem;
+  }
+  .row { display: flex; gap: 0.75rem; }
+  .row > div { flex: 1; }
+  .stream-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem;
+    margin-bottom: 0.75rem;
+    position: relative;
+  }
+  .stream-card .remove {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    background: none;
+    border: none;
+    color: var(--red);
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .btn-primary { background: var(--accent); color: #0f172a; }
+  .btn-secondary { background: #334155; color: var(--text); }
+  .btn-danger { background: var(--red); color: #0f172a; }
+  .btn-add {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    width: 100%;
+    padding: 0.6rem;
+  }
+  .actions { display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap; }
+  .status-line { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; margin-bottom: 1rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.running { background: var(--green); }
+  .dot.stopped { background: var(--red); }
+  #toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Stream Monitor Config</h1>
+  <div class="subtitle">Edit the streams, timings, and Slack webhook that monitor.js uses.</div>
+
+  <div class="panel">
+    <h2>Monitor process</h2>
+    <div class="status-line">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Checking…</span>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" onclick="controlMonitor('start')">Start</button>
+      <button class="btn-secondary" onclick="controlMonitor('restart')">Restart</button>
+      <button class="btn-danger" onclick="controlMonitor('stop')">Stop</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Slack &amp; timing</h2>
+    <label>Slack webhook URL</label>
+    <input id="slackWebhook" type="text" placeholder="https://hooks.slack.com/services/...">
+    <div class="row">
+      <div>
+        <label>Check interval (minutes)</label>
+        <input id="checkIntervalMinutes" type="number" min="1">
+      </div>
+      <div>
+        <label>Retry interval (minutes)</label>
+        <input id="retryIntervalMinutes" type="number" min="1">
+      </div>
+      <div>
+        <label>Max retries</label>
+        <input id="maxRetries" type="number" min="1">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Streams</h2>
+    <div id="streamList"></div>
+    <button class="btn-add" onclick="addStream()">+ Add stream</button>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" onclick="saveConfig()">Save config</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let streamCount = 0;
+
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.borderColor = isError ? '#f87171' : '#334155';
+  setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+function streamCardHTML(id, stream) {
+  return `
+    <div class="stream-card" id="stream-${id}">
+      <button class="remove" onclick="removeStream(${id})">Remove</button>
+      <label>Name</label>
+      <input id="name-${id}" value="${stream.name || ''}">
+      <label>Stream URL</label>
+      <input id="url-${id}" value="${stream.url || ''}">
+      <div class="row">
+        <div>
+          <label>Noise level (e.g. -50dB)</label>
+          <input id="noiseLevel-${id}" value="${stream.noiseLevel || '-50dB'}">
+        </div>
+        <div>
+          <label>Silence threshold (seconds)</label>
+          <input id="silenceThreshold-${id}" type="number" value="${stream.silenceThreshold || 30}">
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function addStream(stream = {}) {
+  const id = streamCount++;
+  document.getElementById('streamList').insertAdjacentHTML('beforeend', streamCardHTML(id, stream));
+}
+
+function removeStream(id) {
+  document.getElementById(`stream-${id}`).remove();
+}
+
+async function loadConfig() {
+  const res = await fetch('/api/config');
+  if (!res.ok) { toast('Could not load config', true); return; }
+  const config = await res.json();
+  document.getElementById('slackWebhook').value = config.slackWebhook || '';
+  document.getElementById('checkIntervalMinutes').value = config.checkIntervalMinutes || 10;
+  document.getElementById('retryIntervalMinutes').value = config.retryIntervalMinutes || 1;
+  document.getElementById('maxRetries').value = config.maxRetries || 10;
+  document.getElementById('streamList').innerHTML = '';
+  streamCount = 0;
+  (config.streams || []).forEach(addStream);
+}
+
+async function saveConfig() {
+  const streamCards = document.querySelectorAll('.stream-card');
+  const streams = Array.from(streamCards).map(card => {
+    const id = card.id.split('-')[1];
+    return {
+      name: document.getElementById(`name-${id}`).value,
+      url: document.getElementById(`url-${id}`).value,
+      noiseLevel: document.getElementById(`noiseLevel-${id}`).value,
+      silenceThreshold: Number(document.getElementById(`silenceThreshold-${id}`).value)
+    };
+  });
+
+  const config = {
+    slackWebhook: document.getElementById('slackWebhook').value,
+    checkIntervalMinutes: Number(document.getElementById('checkIntervalMinutes').value),
+    retryIntervalMinutes: Number(document.getElementById('retryIntervalMinutes').value),
+    maxRetries: Number(document.getElementById('maxRetries').value),
+    streams
+  };
+
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  });
+  const data = await res.json();
+  if (res.ok) {
+    toast('Config saved. Restart the monitor to apply changes.');
+  } else {
+    toast(data.error || 'Save failed', true);
+  }
+}
+
+async function refreshStatus() {
+  const res = await fetch('/api/monitor/status');
+  const data = await res.json();
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  if (data.running) {
+    dot.className = 'dot running';
+    text.textContent = 'Monitor is running';
+  } else {
+    dot.className = 'dot stopped';
+    text.textContent = 'Monitor is stopped';
+  }
+}
+
+async function controlMonitor(action) {
+  const res = await fetch(`/api/monitor/${action}`, { method: 'POST' });
+  const data = await res.json();
+  toast(data.message || (res.ok ? 'Done' : 'Failed'), !res.ok || data.ok === false);
+  refreshStatus();
+}
+
+loadConfig();
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

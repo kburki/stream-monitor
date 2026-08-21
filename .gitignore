@@ -1,0 +1,5 @@
+config.json
+node_modules/
+*.log
+webui/.env
+webui/node_modules/
