@@ -1,4 +1,5 @@
 config.json
+status.json
 node_modules/
 *.log
 webui/.env

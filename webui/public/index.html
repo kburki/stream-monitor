@@ -90,9 +90,21 @@
   }
   .actions { display: flex; gap: 0.6rem; margin-top: 1rem; flex-wrap: wrap; }
   .status-line { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; margin-bottom: 1rem; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
   .dot.running { background: var(--green); }
   .dot.stopped { background: var(--red); }
+  .stream-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  .stream-status-row:last-child { border-bottom: none; }
+  .stream-status-name { flex: 1; }
+  .stream-status-detail { color: var(--muted); font-size: 0.78rem; }
+  .cycle-time { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.75rem; }
   #toast {
     position: fixed;
     bottom: 1.5rem;
@@ -123,6 +135,12 @@
       <button class="btn-secondary" onclick="controlMonitor('restart')">Restart</button>
       <button class="btn-danger" onclick="controlMonitor('stop')">Stop</button>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>Last check results</h2>
+    <div class="cycle-time" id="cycleTime">Waiting for first check…</div>
+    <div id="streamStatusList"></div>
   </div>
 
   <div class="panel">
@@ -260,6 +278,46 @@ async function refreshStatus() {
   }
 }
 
+function timeAgo(isoString) {
+  if (!isoString) return 'never';
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+async function refreshLastStatus() {
+  const res = await fetch('/api/monitor/last-status');
+  const data = await res.json();
+
+  const cycleEl = document.getElementById('cycleTime');
+  cycleEl.textContent = data.lastCycleCompletedAt
+    ? `Last full cycle completed ${timeAgo(data.lastCycleCompletedAt)} (${new Date(data.lastCycleCompletedAt).toLocaleString('en-US')})`
+    : 'Waiting for first check cycle to complete…';
+
+  const listEl = document.getElementById('streamStatusList');
+  const streamNames = Object.keys(data.streams || {});
+  if (streamNames.length === 0) {
+    listEl.innerHTML = '<div class="stream-status-detail">No check results yet.</div>';
+    return;
+  }
+  listEl.innerHTML = streamNames.map(name => {
+    const s = data.streams[name];
+    const dotClass = s.status === 'OK' ? 'running' : 'stopped';
+    const retryNote = s.inRetryMode ? ' (retrying)' : (s.gaveUp ? ' (gave up retrying)' : '');
+    return `
+      <div class="stream-status-row">
+        <span class="dot ${dotClass}"></span>
+        <span class="stream-status-name">${name}</span>
+        <span class="stream-status-detail">${s.reason || s.status}${retryNote} — ${timeAgo(s.checkedAt || s.updatedAt)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 async function controlMonitor(action) {
   const res = await fetch(`/api/monitor/${action}`, { method: 'POST' });
   const data = await res.json();
@@ -269,7 +327,9 @@ async function controlMonitor(action) {
 
 loadConfig();
 refreshStatus();
+refreshLastStatus();
 setInterval(refreshStatus, 5000);
+setInterval(refreshLastStatus, 5000);
 </script>
 </body>
 </html>

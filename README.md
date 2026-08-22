@@ -62,6 +62,13 @@ Saving config in the UI writes straight to `config.json`; you still need to
 hit **Restart** (or restart it yourself if running under pm2/systemd) for
 the running monitor process to pick up the new values.
 
+The page also shows a **Last check results** panel: after every check,
+`monitor.js` writes its per-stream status (OK/FAIL, reason, timing) to
+`status.json` next to `config.json`, and the web UI polls that file every
+few seconds. This is read-only — it just reflects whatever the running
+monitor process last saw, and updates live even if you're not the one who
+started/stopped the process.
+
 ## Viewing logs
 
 PM2 captures everything the script logs to `~/.pm2/logs/`:

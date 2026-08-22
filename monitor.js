@@ -33,6 +33,31 @@ config.streams.forEach(stream => {
 });
 
 // ---------------------------------------------------------------------------
+// Status file for the web UI
+// ---------------------------------------------------------------------------
+// The web UI runs as a separate process, so it can't see this script's
+// in-memory state directly. Instead, after every single stream check we
+// write the latest per-stream status (OK/FAIL, when, why) out to status.json
+// next to config.json. The web UI just reads this file when asked — it's
+// not sensitive data, but is gitignored anyway since it's runtime output,
+// not source.
+const STATUS_PATH = path.join(__dirname, 'status.json');
+const statusData = { streams: {}, lastCycleCompletedAt: null };
+
+function writeStatusFile() {
+  try {
+    fs.writeFileSync(STATUS_PATH, JSON.stringify(statusData, null, 2));
+  } catch (err) {
+    console.error(`Could not write status.json: ${err.message}`);
+  }
+}
+
+function recordStreamStatus(name, info) {
+  statusData.streams[name] = { ...info, updatedAt: new Date().toISOString() };
+  writeStatusFile();
+}
+
+// ---------------------------------------------------------------------------
 // Slack notifications
 // ---------------------------------------------------------------------------
 // Posts a plain-text message to the Slack Incoming Webhook configured in
@@ -204,6 +229,16 @@ function checkStream(stream) {
         state.gaveUp = false;
       }
 
+      recordStreamStatus(stream.name, {
+        status: failed ? 'FAIL' : 'OK',
+        reason: failed
+          ? ((connectionFailed || !connected) ? 'Could not connect' : 'Silence detected')
+          : 'Healthy',
+        checkedAt: checkTime.toISOString(),
+        inRetryMode: state.inRetryMode,
+        gaveUp: state.gaveUp
+      });
+
       resolve({ name: stream.name, failed, inRetryMode: state.inRetryMode });
     });
 
@@ -213,6 +248,12 @@ function checkStream(stream) {
     ffmpeg.on('error', (err) => {
       clearTimeout(timeout);
       console.error(`[${stream.name}] FFmpeg error: ${err.message}`);
+      recordStreamStatus(stream.name, {
+        status: 'FAIL',
+        reason: `FFmpeg error: ${err.message}`,
+        inRetryMode: state.inRetryMode,
+        gaveUp: state.gaveUp
+      });
       resolve({ name: stream.name, failed: true, inRetryMode: state.inRetryMode });
     });
   });
@@ -229,6 +270,8 @@ async function checkAllStreams() {
   for (const stream of config.streams) {
     await checkStream(stream);
   }
+  statusData.lastCycleCompletedAt = new Date().toISOString();
+  writeStatusFile();
   console.log(`--- Cycle complete ---\n`);
 }
 

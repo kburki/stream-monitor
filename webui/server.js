@@ -27,6 +27,9 @@ if (!ADMIN_PASSWORD) {
 
 // Path to the monitor's real config.json (one directory up, next to monitor.js)
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
+// monitor.js writes this file after every stream check — see monitor.js's
+// recordStreamStatus()/writeStatusFile() for what populates it.
+const STATUS_PATH = path.join(__dirname, '..', 'status.json');
 
 // ---------------------------------------------------------------------------
 // PM2 process control
@@ -161,6 +164,17 @@ app.post('/api/config', (req, res) => {
 // ---------------------------------------------------------------------------
 app.get('/api/monitor/status', async (req, res) => {
   res.json(await getStatus());
+});
+
+app.get('/api/monitor/last-status', (req, res) => {
+  try {
+    const raw = fs.readFileSync(STATUS_PATH, 'utf8');
+    res.json(JSON.parse(raw));
+  } catch (err) {
+    // Most common cause: the monitor hasn't completed its first check yet
+    // since being started, so status.json doesn't exist. Not an error.
+    res.json({ streams: {}, lastCycleCompletedAt: null });
+  }
 });
 
 app.post('/api/monitor/start', async (req, res) => {
