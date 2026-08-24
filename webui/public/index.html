@@ -60,6 +60,11 @@
     margin-bottom: 0.75rem;
     position: relative;
   }
+  .stream-card.is-paused {
+    opacity: 0.6;
+    border-color: var(--muted);
+    border-style: dashed;
+  }
   .stream-card .remove {
     position: absolute;
     top: 0.6rem;
@@ -69,6 +74,31 @@
     color: var(--red);
     cursor: pointer;
     font-size: 0.8rem;
+  }
+  .stream-card .pause-toggle {
+    position: absolute;
+    top: 0.55rem;
+    right: 4.2rem;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 5px;
+  }
+  .stream-card .pause-toggle.active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .paused-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    border: 1px solid var(--muted);
+    border-radius: 4px;
+    padding: 0.05rem 0.4rem;
+    margin-left: 0.4rem;
   }
   button {
     cursor: pointer;
@@ -93,6 +123,7 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
   .dot.running { background: var(--green); }
   .dot.stopped { background: var(--red); }
+  .dot.paused { background: var(--muted); }
   .stream-status-row {
     display: flex;
     align-items: center;
@@ -178,6 +209,7 @@
 
 <script>
 let streamCount = 0;
+let pausedSet = new Set(); // stream names currently paused
 
 function toast(msg, isError) {
   const el = document.getElementById('toast');
@@ -187,11 +219,12 @@ function toast(msg, isError) {
   setTimeout(() => { el.style.display = 'none'; }, 3000);
 }
 
-function streamCardHTML(id, stream) {
+function streamCardHTML(id, stream, isPaused) {
   return `
-    <div class="stream-card" id="stream-${id}">
+    <div class="stream-card ${isPaused ? 'is-paused' : ''}" id="stream-${id}">
       <button class="remove" onclick="removeStream(${id})">Remove</button>
-      <label>Name</label>
+      <button class="pause-toggle ${isPaused ? 'active' : ''}" id="pause-btn-${id}" onclick="togglePause(${id})">${isPaused ? '▶ Resume' : '⏸ Pause'}</button>
+      <label>Name ${isPaused ? '<span class="paused-badge">PAUSED</span>' : ''}</label>
       <input id="name-${id}" value="${stream.name || ''}">
       <label>Stream URL</label>
       <input id="url-${id}" value="${stream.url || ''}">
@@ -211,17 +244,62 @@ function streamCardHTML(id, stream) {
 
 function addStream(stream = {}) {
   const id = streamCount++;
-  document.getElementById('streamList').insertAdjacentHTML('beforeend', streamCardHTML(id, stream));
+  const isPaused = stream.name && pausedSet.has(stream.name);
+  document.getElementById('streamList').insertAdjacentHTML('beforeend', streamCardHTML(id, stream, isPaused));
 }
 
 function removeStream(id) {
   document.getElementById(`stream-${id}`).remove();
 }
 
+async function togglePause(id) {
+  const nameInput = document.getElementById(`name-${id}`);
+  const name = nameInput.value.trim();
+  if (!name) {
+    toast('Give this stream a name before pausing it.', true);
+    return;
+  }
+  const card = document.getElementById(`stream-${id}`);
+  const btn = document.getElementById(`pause-btn-${id}`);
+  const currentlyPaused = pausedSet.has(name);
+  const newState = !currentlyPaused;
+
+  const res = await fetch('/api/paused', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, paused: newState })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    toast(data.error || 'Could not update pause state', true);
+    return;
+  }
+
+  if (newState) {
+    pausedSet.add(name);
+    card.classList.add('is-paused');
+    btn.classList.add('active');
+    btn.textContent = '▶ Resume';
+    toast(`${name} paused — the monitor will skip it starting next cycle.`);
+  } else {
+    pausedSet.delete(name);
+    card.classList.remove('is-paused');
+    btn.classList.remove('active');
+    btn.textContent = '⏸ Pause';
+    toast(`${name} resumed — checks will start again next cycle.`);
+  }
+}
+
 async function loadConfig() {
-  const res = await fetch('/api/config');
-  if (!res.ok) { toast('Could not load config', true); return; }
-  const config = await res.json();
+  const [configRes, pausedRes] = await Promise.all([
+    fetch('/api/config'),
+    fetch('/api/paused')
+  ]);
+  if (!configRes.ok) { toast('Could not load config', true); return; }
+  const config = await configRes.json();
+  const pausedData = pausedRes.ok ? await pausedRes.json() : { paused: [] };
+  pausedSet = new Set(pausedData.paused || []);
+
   document.getElementById('slackWebhook').value = config.slackWebhook || '';
   document.getElementById('checkIntervalMinutes').value = config.checkIntervalMinutes || 10;
   document.getElementById('retryIntervalMinutes').value = config.retryIntervalMinutes || 1;
@@ -306,13 +384,13 @@ async function refreshLastStatus() {
   }
   listEl.innerHTML = streamNames.map(name => {
     const s = data.streams[name];
-    const dotClass = s.status === 'OK' ? 'running' : 'stopped';
+    const dotClass = s.status === 'OK' ? 'running' : (s.status === 'PAUSED' ? 'paused' : 'stopped');
     const retryNote = s.inRetryMode ? ' (retrying)' : (s.gaveUp ? ' (gave up retrying)' : '');
     return `
       <div class="stream-status-row">
         <span class="dot ${dotClass}"></span>
         <span class="stream-status-name">${name}</span>
-        <span class="stream-status-detail">${s.reason || s.status}${retryNote} — ${timeAgo(s.checkedAt || s.updatedAt)}</span>
+        <span class="stream-status-detail">${s.reason || s.status}${s.status === 'PAUSED' ? '' : retryNote} — ${timeAgo(s.checkedAt || s.updatedAt)}</span>
       </div>
     `;
   }).join('');

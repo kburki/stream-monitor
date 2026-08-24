@@ -58,6 +58,31 @@ function recordStreamStatus(name, info) {
 }
 
 // ---------------------------------------------------------------------------
+// Paused streams
+// ---------------------------------------------------------------------------
+// Lets you take a stream (e.g. a seasonal RTSP camera) out of the check
+// rotation without editing config.json or restarting the process — handy
+// for something like GLOF cameras that only run part of the year, so you're
+// not re-adding/removing config entries each time. paused.json is just a
+// plain array of stream names, written by the web UI's pause/resume button.
+// We re-read it fresh at the start of every check cycle (and every retry
+// cycle) rather than caching it, so a pause/resume from the web UI takes
+// effect on the very next cycle without needing to restart this process.
+const PAUSED_PATH = path.join(__dirname, 'paused.json');
+
+function loadPausedStreams() {
+  try {
+    const raw = fs.readFileSync(PAUSED_PATH, 'utf8');
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    // Missing file (nothing paused yet) or unreadable — treat as "nothing
+    // paused" rather than crashing the monitor over it.
+    return new Set();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Slack notifications
 // ---------------------------------------------------------------------------
 // Posts a plain-text message to the Slack Incoming Webhook configured in
@@ -267,7 +292,27 @@ function checkStream(stream) {
 // / spawn many ffmpeg processes at once.
 async function checkAllStreams() {
   console.log(`\n--- Starting check cycle at ${formatTime(new Date())} ---`);
+  const pausedStreams = loadPausedStreams();
   for (const stream of config.streams) {
+    if (pausedStreams.has(stream.name)) {
+      console.log(`[${stream.name}] Paused — skipping check`);
+      // Reset alert/retry state so that if it's still down whenever it gets
+      // resumed, it's treated as a fresh failure (sends a new alert) rather
+      // than silently picking back up mid-retry-count from before the pause.
+      const state = streamStates[stream.name];
+      state.alertSent = false;
+      state.inRetryMode = false;
+      state.retryCount = 0;
+      state.gaveUp = false;
+      recordStreamStatus(stream.name, {
+        status: 'PAUSED',
+        reason: 'Paused by user',
+        checkedAt: new Date().toISOString(),
+        inRetryMode: false,
+        gaveUp: false
+      });
+      continue;
+    }
     await checkStream(stream);
   }
   statusData.lastCycleCompletedAt = new Date().toISOString();
@@ -282,7 +327,8 @@ async function checkAllStreams() {
 // to streams whose state.inRetryMode is true, so healthy streams are left
 // alone and only get checked on the normal 10-minute cycle.
 async function retryFailedStreams() {
-  const failedStreams = config.streams.filter(s => streamStates[s.name].inRetryMode);
+  const pausedStreams = loadPausedStreams();
+  const failedStreams = config.streams.filter(s => streamStates[s.name].inRetryMode && !pausedStreams.has(s.name));
   if (failedStreams.length === 0) return;
   console.log(`\n--- Retry check at ${formatTime(new Date())} (${failedStreams.length} stream(s)) ---`);
   for (const stream of failedStreams) {

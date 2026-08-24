@@ -69,6 +69,29 @@ few seconds. This is read-only — it just reflects whatever the running
 monitor process last saw, and updates live even if you're not the one who
 started/stopped the process.
 
+## Pausing streams
+
+Each stream card has a **Pause/Resume** button. A paused stream is skipped
+entirely by the monitor — no ffmpeg check runs, no Slack alerts fire, no
+retries happen — until you resume it. This is meant for something like a
+seasonal RTSP camera (e.g. only deployed for a few weeks a year for an
+event) that you don't want removed from `config.json` and re-added each
+time, or a stream you know is down for maintenance and don't want alerts
+about while you sort it out.
+
+Under the hood this writes to `paused.json` (gitignored, just a plain list
+of stream names) next to `config.json`. `monitor.js` re-reads that file at
+the start of every check cycle, so pausing/resuming takes effect on the
+**next** cycle — no restart needed. For a currently-failing stream that's
+actively retrying every minute, that means within about a minute; for a
+healthy stream, within one `checkIntervalMinutes` cycle (10 minutes by
+default).
+
+One caveat: pause state is tracked by stream **name**. If you rename a
+paused stream and save, it'll show as unpaused under the new name (the old
+name just becomes an orphaned, harmless entry in `paused.json`) — repause it
+under the new name if that happens.
+
 ## Viewing logs
 
 PM2 captures everything the script logs to `~/.pm2/logs/`:

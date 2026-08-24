@@ -74,6 +74,21 @@ Output includes:
 - Every outage's start time, end time, and duration per stream
 - A totals section: outage count, total downtime, longest single outage per stream
 
+## Pausing a stream (e.g. seasonal cameras)
+
+Easiest way is the Pause/Resume button on each stream card in the web UI —
+no restart needed, takes effect within about a minute (if it's actively
+retrying) up to one check cycle (if healthy).
+
+You can also do it by hand on the droplet if the web UI isn't up:
+```
+cat > /root/stream-monitor/paused.json << 'EOF'
+["5819NE Cam"]
+EOF
+```
+Put a `[]` in that file (or delete it) to resume everything. Name matching
+is exact and case-sensitive — must match the `name` field in `config.json`.
+
 ## Web UI access
 
 The web UI (`http://localhost:3000` once tunneled, or `http://64.23.245.75:3000`
