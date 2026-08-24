@@ -30,6 +30,10 @@ const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 // monitor.js writes this file after every stream check — see monitor.js's
 // recordStreamStatus()/writeStatusFile() for what populates it.
 const STATUS_PATH = path.join(__dirname, '..', 'status.json');
+// The web UI writes this file to tell monitor.js which streams to skip.
+// monitor.js re-reads it fresh every check cycle, so pausing/resuming here
+// takes effect on the monitor's next cycle without needing a restart.
+const PAUSED_PATH = path.join(__dirname, '..', 'paused.json');
 
 // ---------------------------------------------------------------------------
 // PM2 process control
@@ -174,6 +178,49 @@ app.get('/api/monitor/last-status', (req, res) => {
     // Most common cause: the monitor hasn't completed its first check yet
     // since being started, so status.json doesn't exist. Not an error.
     res.json({ streams: {}, lastCycleCompletedAt: null });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pause/resume individual streams
+// ---------------------------------------------------------------------------
+// A paused stream is skipped by the monitor entirely — no ffmpeg check, no
+// alerts, no retries — until resumed. Useful for seasonal streams (e.g. a
+// camera that's only online part of the year) so you don't have to remove
+// and re-add it from config.json every time.
+function loadPaused() {
+  try {
+    const arr = JSON.parse(fs.readFileSync(PAUSED_PATH, 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePaused(list) {
+  fs.writeFileSync(PAUSED_PATH, JSON.stringify(list, null, 2));
+}
+
+app.get('/api/paused', (req, res) => {
+  res.json({ paused: loadPaused() });
+});
+
+app.post('/api/paused', (req, res) => {
+  const { name, paused } = req.body;
+  if (typeof name !== 'string' || !name || typeof paused !== 'boolean') {
+    return res.status(400).json({ error: 'Body must include a stream "name" and a boolean "paused".' });
+  }
+  let list = loadPaused();
+  if (paused) {
+    if (!list.includes(name)) list.push(name);
+  } else {
+    list = list.filter(n => n !== name);
+  }
+  try {
+    savePaused(list);
+    res.json({ ok: true, paused: list });
+  } catch (err) {
+    res.status(500).json({ error: `Could not write paused.json: ${err.message}` });
   }
 });
 

@@ -65,10 +65,15 @@
     border-color: var(--muted);
     border-style: dashed;
   }
-  .stream-card .remove {
+  .stream-card .card-actions {
     position: absolute;
     top: 0.6rem;
     right: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .stream-card .remove {
     background: none;
     border: none;
     color: var(--red);
@@ -76,9 +81,6 @@
     font-size: 0.8rem;
   }
   .stream-card .pause-toggle {
-    position: absolute;
-    top: 0.55rem;
-    right: 4.2rem;
     background: none;
     border: 1px solid var(--border);
     color: var(--muted);
@@ -86,6 +88,7 @@
     font-size: 0.75rem;
     padding: 0.2rem 0.55rem;
     border-radius: 5px;
+    white-space: nowrap;
   }
   .stream-card .pause-toggle.active {
     border-color: var(--accent);
@@ -222,8 +225,10 @@ function toast(msg, isError) {
 function streamCardHTML(id, stream, isPaused) {
   return `
     <div class="stream-card ${isPaused ? 'is-paused' : ''}" id="stream-${id}">
-      <button class="remove" onclick="removeStream(${id})">Remove</button>
-      <button class="pause-toggle ${isPaused ? 'active' : ''}" id="pause-btn-${id}" onclick="togglePause(${id})">${isPaused ? '▶ Resume' : '⏸ Pause'}</button>
+      <div class="card-actions">
+        <button class="pause-toggle ${isPaused ? 'active' : ''}" id="pause-btn-${id}" onclick="togglePause(${id})">${isPaused ? '▶ Resume' : '⏸ Pause'}</button>
+        <button class="remove" onclick="removeStream(${id})">Remove</button>
+      </div>
       <label>Name ${isPaused ? '<span class="paused-badge">PAUSED</span>' : ''}</label>
       <input id="name-${id}" value="${stream.name || ''}">
       <label>Stream URL</label>
