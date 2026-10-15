@@ -1,4 +1,4 @@
-# KTOO Stream Monitor
+# Stream Monitor
 
 Monitors a set of audio/video streams for dead air or connectivity failures
 using `ffmpeg`'s `silencedetect` filter, and posts alerts to Slack.
