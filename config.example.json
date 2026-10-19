@@ -1,0 +1,26 @@
+{
+  "slackWebhook": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "checkIntervalMinutes": 10,
+  "retryIntervalMinutes": 1,
+  "maxRetries": 10,
+  "streams": [
+    {
+      "name": "Stream 1",
+      "url": "http://example.com/radio-stream.aac",
+      "silenceThreshold": 30,
+      "noiseLevel": "-50dB"
+    },
+    {
+      "name": "Stream 2",
+      "url": "https://example.com/video-stream/playlist.m3u8",
+      "silenceThreshold": 30,
+      "noiseLevel": "-50dB"
+    },
+    {
+      "name": "Camera 1",
+      "url": "rtsp://username:password@192.0.2.10:554/stream1",
+      "silenceThreshold": 30,
+      "noiseLevel": "-50dB"
+    }
+  ]
+}

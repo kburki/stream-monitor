@@ -1,0 +1,7 @@
+config.json
+status.json
+paused.json
+node_modules/
+*.log
+webui/.env
+webui/node_modules/
